@@ -1,0 +1,117 @@
+% === Section VIII: Experimental Evaluation ===
+\section{Experimental Evaluation}
+\label{sec:experiments}
+
+We evaluate two claims: (A)~the fused WCOJ join over CSR matches
+hand-written CSR performance, and (B)~the pairwise (SpMM) approach
+exhibits measurable blowup on skewed graphs.
+
+% TODO: Fill in after running benchmarks.
+
+\subsection{Setup}
+
+\paragraph{Hardware.}
+% TODO: CPU model, cores, cache hierarchy, memory bandwidth.
+
+\paragraph{Graphs.}
+We use RMAT/Kronecker graphs at scales 16, 18, 20, and~22 (edge
+factor~16), following the Graph500 specification~\cite{graph500}.
+Edges are symmetrized and self-loops removed.  For the blowup
+experiment (Thread~B), we additionally construct graphs with
+controlled degree skew by varying the RMAT parameters
+$(a,b,c,d)$---increasing~$a$ concentrates edges on fewer hub vertices.
+
+\paragraph{Implementations.}
+We compare triangle-counting implementations across frameworks:
+\begin{enumerate}
+\item \textbf{CSR (C++)}: hand-written CSR with galloping
+  intersection, compiled with \texttt{gcc -O3}.
+\item \textbf{CSR (Julia)}: equivalent Julia implementation.
+\item \textbf{WCOJ/CSR}: the production system's
+  TrieStateConjunction with CSR-backed TrieStates
+  (Section~\ref{sec:production}).
+\item \textbf{WCOJ/B+tree}: same conjunction with B+ tree
+  storage and span-level intersection.
+\item \textbf{EmptyHeaded}: the WCOJ-based relational engine of
+  Aberger et al.~\cite{aberger2017}, using its native triangle
+  counting query.
+\item \textbf{GraphBLAS}: SuiteSparse:GraphBLAS~\cite{davis2019},
+  $C\langle L \rangle = L \cdot L$ formulation.
+\end{enumerate}
+All experiments are single-threaded to isolate algorithmic
+differences from parallelization effects.
+
+% NOTE on benchmark plan:
+% - RAICode WCOJ results on RAICode's current Julia version
+% - RAICode WCOJ results on latest Julia (to isolate Julia version effects)
+% - SuiteSparse:GraphBLAS via Julia's SparseArrays/GraphBLAS bindings
+%   on latest Julia (may need to check staleness of the Julia wrapper)
+% - EmptyHeaded: build from source (C++/Cython), run its triangle counting
+%   query. Provides a second WCOJ data point with different storage/intersection.
+% - Hand-written CSR in both C++ and Julia as baselines
+% Access SuiteSparse:GraphBLAS through Julia rather than building
+% a separate C implementation — keeps the comparison fair (same language
+% overhead for WCOJ and GraphBLAS).
+
+\subsection{Thread A: Code Equivalence}
+
+% TODO: Insert Table with timing results.
+
+\begin{table}[t]
+\centering
+\caption{Triangle counting time (seconds) on RMAT graphs.}
+\label{tab:results}
+\small
+\begin{tabular}{@{}rrrrrrrrr@{}}
+\toprule
+Scale & Edges & CSR (C++) & CSR (Jl) & WCOJ/CSR & WCOJ/B+ & EH & GrB \\
+\midrule
+16 & & & & & & & \\
+18 & & & & & & & \\
+20 & & & & & & & \\
+22 & & & & & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TODO: Insert Figure (bar chart: time vs scale).
+
+We expect the WCOJ/CSR column to match hand-written CSR within
+measurement noise, confirming that the abstraction imposes zero
+overhead.  The WCOJ/B+tree column should show measurable overhead
+from page-boundary handling in the intersection kernel.
+
+\subsection{Thread B: Pairwise Blowup}
+
+% TODO: Insert Figure (time ratio SpMM/WCOJ vs degree skew).
+
+The pairwise approach (GraphBLAS $C\langle L \rangle = L \cdot L$)
+computes all length-2 paths before filtering.  On graphs with
+high-degree hubs, the number of length-2 paths grows quadratically
+in the hub degree, while the fused WCOJ approach intersects eagerly and
+avoids dead-end paths.
+
+We vary the RMAT skew parameter to control the maximum hub degree
+and measure the ratio of GraphBLAS time to WCOJ/CSR time.
+As the skew increases (more power-law-like), we expect this ratio to
+grow, confirming that the $\Oh(M^2)$ vs.\ $\Oh(M^{3/2})$ gap from
+Table~\ref{tab:pairwise-vs-wcoj} is not merely theoretical.
+
+\paragraph{Caveat.}
+SuiteSparse:GraphBLAS is a highly optimized, mature implementation;
+our WCOJ/CSR is a single-threaded research prototype.  Absolute
+times are not directly comparable---the meaningful quantity is how
+each approach \emph{scales} with degree skew.
+
+\subsection{Analysis}
+
+% TODO: Interpret results once available.  Key points:
+% - WCOJ/CSR matches hand-written CSR (zero-overhead abstraction)
+% - WCOJ/B+tree overhead is measurable but modest (spans help)
+% - EmptyHeaded: another WCOJ implementation — expect similar scaling to
+%   WCOJ/CSR (both avoid pairwise blowup), but different absolute times
+%   due to different storage (compressed bitsets vs CSR) and intersection
+%   strategies. Validates that the WCOJ advantage is framework-general,
+%   not an artifact of our specific implementation.
+% - GraphBLAS blows up on skewed graphs; WCOJ/CSR does not
+% - The theoretical O(M^2) vs O(M^{3/2}) gap is practically observable

@@ -1,0 +1,76 @@
+% === Section VII: Why Lazy Evaluation Cannot Close the Gap ===
+\section{Why Lazy Evaluation Cannot Close the Gap}
+\label{sec:lazy}
+
+A natural objection to the preceding analysis is that the pairwise
+blowup is an implementation artifact: if the SpMM were evaluated
+\emph{lazily}---fusing the multiply and mask phases without
+materializing the intermediate---the $\Oh(M^2)$ cost would
+disappear.  This section explains why lazy evaluation within the
+linear algebra framework is fundamentally insufficient.
+
+\subsection{The Structural Limitation}
+
+The pairwise SpMM approach computes $C\langle L \rangle = L \cdot L$
+in two conceptual phases: (1)~for each pair $(i,k)$, sum over shared
+indices $j$ to form $C_{ik}$, and (2)~discard entries where
+$L_{ik} = 0$.  Lazy evaluation can fuse these phases, checking the
+mask before accumulating.  But the fused pairwise computation still
+enumerates the \emph{same} set of $(i,j,k)$ triples---it merely
+avoids storing the non-triangles.  The \emph{work} is unchanged:
+every length-2 path $(i \to j \to k)$ is visited, regardless of
+whether the closing edge $(i,k)$ exists.
+
+The WCOJ approach operates differently.  At the innermost level, it
+intersects $N(x) \cap N(y)$---only visiting $z$-values that satisfy
+\emph{both} constraints simultaneously.  Length-2 paths that do not
+close into triangles are never explored, because the intersection
+prunes them before they are enumerated.
+
+Lazy evaluation of the pairwise plan eliminates the
+\emph{materialization} cost but not the \emph{enumeration} cost.
+The WCOJ plan eliminates both.
+
+\subsection{A Formal Basis: The SPORES Result}
+
+Wang et al.~\cite{wang2020spores} formalized this limitation.  Their
+SPORES system optimizes linear algebra (LA) expressions by lifting
+them into relational algebra (RA), applying RA equivalence rules, and
+lowering the result back to LA\@.  The central theorem is:
+
+\begin{quote}
+\emph{RA rewrite rules are complete for LA optimization}: any
+equivalent LA expression can be reached via RA rewrites.  The converse
+does not hold---LA rewrite rules alone cannot reach all equivalent LA
+expressions.
+\end{quote}
+
+The reason is structural.  LA expressions are restricted to operations
+on matrices (two-index objects).  RA can introduce intermediate
+expressions with \emph{three or more free variables}---higher-arity
+relations that have no matrix representation.  These higher-arity
+intermediates serve as ``stepping stones'' to reach LA expressions that
+are unreachable by pairwise matrix rewrites alone.
+
+For triangle counting, the fused three-way intersection is precisely
+such a higher-arity operation: it simultaneously binds $x$, $y$,
+and~$z$ across three relations.  No sequence of pairwise matrix
+operations---however cleverly fused or lazily evaluated---can express
+this simultaneous three-way constraint.  The limitation is not in the
+implementation but in the \emph{algebra}: pairwise operations are
+simply less expressive than multiway operations for cyclic patterns.
+
+\subsection{Implications}
+
+This has a concrete consequence for the sparse linear algebra
+community.  Efforts to improve GraphBLAS triangle counting through
+better SpMM implementations, smarter masking strategies, or lazy
+evaluation of expression trees are optimizing within an algebraic
+framework that is provably incomplete.  For triangle counting (and
+more generally, for any cyclic join pattern), the optimal algorithm
+lives outside the space of pairwise matrix expressions.
+
+The relational algebra framework reaches it naturally.  And as
+Sections~\ref{sec:equivalence}--\ref{sec:production} demonstrate, the
+resulting code is not some exotic database construction---it is the
+same CSR intersection loop that HPC programmers already write.

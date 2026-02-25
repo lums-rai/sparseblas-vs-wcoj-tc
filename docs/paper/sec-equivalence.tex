@@ -1,0 +1,177 @@
+% === Section V: Code Equivalence ===
+\section{Code Equivalence: Fused Join on CSR}
+\label{sec:equivalence}
+
+We now arrive at the paper's central result.  When the variable-at-a-time
+evaluation from Section~\ref{sec:triangle} is carried out over CSR
+arrays, every operation maps to a concrete array operation, and the
+generated triangle-counting code is \emph{identical} to what an HPC
+programmer would write by hand.
+
+\subsection{Fused Join vs.\ CSR Code}
+
+Figure~\ref{fig:sidebyside} places the fused-join pseudocode
+(left) next to the corresponding CSR implementation (right).
+Each numbered marker~\ding{192}--\ding{195} connects a level of the
+evaluation to its CSR realization.
+
+\begin{figure*}[t]
+\centering
+\small
+\begin{tabular}{@{}p{0.42\textwidth}@{\hspace{1.5em}}c@{\hspace{1.5em}}p{0.48\textwidth}@{}}
+\textbf{Fused Join (WCOJ)} & & \textbf{CSR} \\[2pt]
+\toprule\\[-8pt]
+%
+\ding{192}~~\texttt{for each vertex x:}
+& $\longleftrightarrow$ &
+\ding{192}~~\texttt{for x = 1 to N}
+\\[6pt]
+%
+\ding{193}~~\texttt{for y in N(x), y > x:}
+& $\longleftrightarrow$ &
+\ding{193}~~\texttt{for yi = rp[x] to rp[x+1]-1}
+\par\hspace{3em}\texttt{y = cv[yi]; if y <= x: continue}
+\\[6pt]
+%
+\ding{194}~~\texttt{for z in N(x) $\cap$ N(y),}
+\par\hspace{3em}\texttt{z > y:}
+& $\longleftrightarrow$ &
+\ding{194}~~\texttt{xi = yi + 1}
+\par\hspace{3em}\texttt{zi = gallop\_gt(cv, y, rp[y], rp[y+1]-1)}
+\par\hspace{3em}\texttt{while xi <= rp[x+1]-1 \&\& zi <= rp[y+1]-1}
+\par\hspace{4.5em}\texttt{xv, zv = cv[xi], cv[zi]}
+\par\hspace{4.5em}\texttt{if xv == zv}
+\\[6pt]
+%
+\ding{195}~~\hspace{2em}\texttt{count += 1}
+& $\longleftrightarrow$ &
+\ding{195}~~\hspace{4.5em}\texttt{count += 1; xi++; zi++}
+\par\hspace{4.5em}\texttt{elseif xv < zv}
+\par\hspace{6em}\texttt{xi = gallop\_geq(cv, zv, xi, ...)}
+\par\hspace{4.5em}\texttt{else}
+\par\hspace{6em}\texttt{zi = gallop\_geq(cv, xv, zi, ...)}
+\\
+\end{tabular}
+
+\vspace{4pt}
+\caption{Side-by-side: fused WCOJ triangle counting (left) and its CSR
+realization (right).  Abbreviations: \texttt{rp}~=~\texttt{rowptr},
+\texttt{cv}~=~\texttt{colval}.  Arrows connect each level of the
+evaluation to its CSR implementation.  The generated code is
+instruction-for-instruction identical to hand-written CSR triangle
+counting.}
+\label{fig:sidebyside}
+\end{figure*}
+
+Two details deserve attention:
+
+\smallskip\noindent\textbf{Why \texttt{xi = yi + 1}.}
+Since \texttt{colval} is sorted within each row and
+$\texttt{colval[yi]} = y$, all entries after position~\texttt{yi} are
+strictly greater than~$y$---automatically satisfying $z > y$ on the
+$x$-side of the intersection.
+
+\smallskip\noindent\textbf{Why \texttt{zi} needs \texttt{gallop\_gt}.}
+The neighbor list of~$y$ may include vertices~$\le y$, so we must
+binary-search forward to the first entry $> y$.  On the $x$-side this
+skip is free (by pointer arithmetic); on the $y$-side it requires a
+$\Oh(\log d_y)$ galloping search.
+
+\subsection{The Intersection Kernel}
+
+The innermost loop---marker~\ding{194} in
+Figure~\ref{fig:sidebyside}---is the computational hot path.  We
+abstract it as a single function, \textsc{IntersectNeighbors},
+operating on two sorted slices of \texttt{colval}
+(Algorithm~\ref{alg:intersect}).  The full triangle count is then
+Algorithm~\ref{alg:triangle}: two outer loops iterate over directed
+edges $(x \to y)$ with $y > x$, and the inner kernel intersects the
+neighbor lists of~$x$ and~$y$ restricted to entries past~$y$.
+
+\begin{algorithm}[t]
+\caption{\textsc{IntersectNeighbors}: galloping merge of two sorted
+neighbor-list slices.}
+\label{alg:intersect}
+\begin{algorithmic}[1]
+\Require Sorted arrays $\texttt{rp}$ (row pointers), $\texttt{cv}$ (column values);
+  vertex~$a$ with start position $a_\mathrm{lo}$;
+  vertex~$b$ with start position $b_\mathrm{lo}$;
+  callback~$f$
+\State $a_\mathrm{hi} \gets \texttt{rp}[a+1]-1$; \;
+       $b_\mathrm{hi} \gets \texttt{rp}[b+1]-1$
+\State $i \gets a_\mathrm{lo}$; \; $j \gets b_\mathrm{lo}$
+\While{$i \le a_\mathrm{hi}$ \textbf{and} $j \le b_\mathrm{hi}$}
+  \State $u \gets \texttt{cv}[i]$; \; $v \gets \texttt{cv}[j]$
+  \If{$u = v$}
+    \State $f(u)$; \; $i \gets i+1$; \; $j \gets j+1$
+  \ElsIf{$u < v$}
+    \State $i \gets \textsc{GallopGeq}(\texttt{cv}, v, i, a_\mathrm{hi})$
+  \Else
+    \State $j \gets \textsc{GallopGeq}(\texttt{cv}, u, j, b_\mathrm{hi})$
+  \EndIf
+\EndWhile
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{\textsc{TriangleCount}: CSR triangle counting with
+$x < y < z$ ordering.}
+\label{alg:triangle}
+\begin{algorithmic}[1]
+\Require CSR arrays $\texttt{rp}[1{:}N{+}1]$, $\texttt{cv}[1{:}\mathrm{nnz}]$
+\State $\mathrm{count} \gets 0$
+\For{$x = 1$ \textbf{to} $N$}
+  \Comment{\ding{192} iterate vertices}
+  \For{$\texttt{yi} = \texttt{rp}[x]$ \textbf{to} $\texttt{rp}[x{+}1]{-}1$}
+    \Comment{\ding{193} iterate neighbors}
+    \State $y \gets \texttt{cv}[\texttt{yi}]$
+    \If{$y \le x$} \textbf{continue} \EndIf
+    \Comment{filter $y > x$}
+    \State $a_\mathrm{lo} \gets \texttt{yi} + 1$
+      \Comment{neighbors of $x$ past $y$}
+    \State $b_\mathrm{lo} \gets \textsc{GallopGt}(\texttt{cv}, y,
+      \texttt{rp}[y], \texttt{rp}[y{+}1]{-}1)$
+      \Comment{neighbors of $y$ past $y$}
+    \State \textsc{IntersectNeighbors}($\texttt{rp}, \texttt{cv},
+      x, a_\mathrm{lo}, y, b_\mathrm{lo},
+      z \mapsto \mathrm{count} \mathrel{+}= 1$)
+      \Comment{\ding{194}\ding{195}}
+  \EndFor
+\EndFor
+\State \Return $\mathrm{count}$
+\end{algorithmic}
+\end{algorithm}
+
+\textsc{GallopGeq}$(A, v, \mathrm{lo}, \mathrm{hi})$ returns the
+position of the first entry~$\ge v$ in the sorted slice
+$A[\mathrm{lo}{:}\mathrm{hi}]$, using exponential search followed by
+binary search.  Its cost is $\Oh(\log g)$ where $g$ is the number of
+entries skipped---the ``gap.''  \textsc{GallopGt} is the strict
+variant ($> v$).  These are the standard adaptive-intersection
+primitives~\cite{demaine2000,baezayates2004}.
+
+\subsection{The Equivalence}
+
+The correspondence between the fused-join derivation
+(Sections~\ref{sec:spmm}--\ref{sec:equivalence}) and the CSR code
+is exact.  Every step is mechanically determined:
+%
+\begin{enumerate}
+\item The query $R(x,y) \wedge R(y,z) \wedge R(x,z)$ with variable
+  ordering $(x,y,z)$ determines which relations constrain each
+  variable (Table~\ref{tab:levels}).
+\item The self-join $R = S = T$ collapses levels~1 and~2 to simple
+  iteration, leaving level~3 as the only intersection.
+\item CSR provides $\Oh(1)$ row access and sorted neighbor lists
+  (Section~\ref{sec:csr-joins}), converting each abstract operation
+  to an array operation.
+\item After inlining and constant folding, the result is
+  Algorithm~\ref{alg:triangle}.
+\end{enumerate}
+%
+No design choices remain.  The WCOJ framework, given the query
+and the storage format, \emph{generates} the same tight inner loop
+that a sparse-matrix programmer would write by hand.  The
+entire computation reduces to: \textbf{for each directed edge
+$(x \to y)$ with $y > x$, intersect the neighbor lists of~$x$
+and~$y$ restricted to entries past~$y$.}

@@ -1,0 +1,245 @@
+% === Section IV: Triangle Counting: Pairwise vs. Fused ===
+\section{Triangle Counting: Pairwise vs.\ Fused}
+\label{sec:triangle}
+
+We now apply variable-at-a-time evaluation to the triangle query---a
+three-way self-join.  The contrast with pairwise evaluation (SpMM)
+motivates the fused approach and explains why it is strictly better.
+We first show how the evaluation plan is \emph{derived} from the query
+structure, making the construction explicit.
+
+\subsection{Constructing the Evaluation Plan}
+\label{sec:construction}
+
+The WCOJ evaluation plan for a conjunctive query is not designed by
+hand---it is \emph{read off} from the query
+structure~\cite{veldhuizen2014,nprr2018}.  The construction has three
+steps:
+
+\smallskip\noindent\textbf{Step 1: Write the query as a conjunction of
+atoms.}
+The triangle query is:
+\[
+  Q(x,y,z) \;=\; R(x,y) \;\wedge\; S(y,z) \;\wedge\; T(x,z).
+\]
+Each atom is a binary relation; we treat the edge set of an undirected
+graph as a single relation $R = S = T$ (the self-join case, deferred
+to Section~\ref{sec:selfjoin}).
+
+\smallskip\noindent\textbf{Step 2: Choose a variable ordering.}
+Fix an ordering of the query variables---say $(x, y, z)$.  This
+determines the nesting of the evaluation loops: $x$ is the outermost
+variable, $z$ the innermost.  (The choice of ordering affects
+performance but not correctness; the AGM bound and fractional
+hypertree width~\cite{grohe2014} guide the optimal
+choice.)
+
+\smallskip\noindent\textbf{Step 3: At each depth, identify the
+participating atoms.}
+Process the variables in order.  At depth~$i$, an atom \emph{participates}
+if it contains variable~$x_i$ and all of its other variables appear at
+earlier depths (i.e., are already bound).  The participating atoms each
+contribute a sorted iterator over the candidates for~$x_i$; these
+iterators are intersected via the leapfrog
+join~\cite{veldhuizen2014}.  If only one atom participates, no
+intersection is needed---the evaluation simply iterates.
+
+\smallskip
+Applying this to the triangle query with ordering $(x, y, z)$:
+
+\begin{description}
+\item[Depth 0 ($x$).]
+  $R(x,y)$ contains~$x$; its other variable~$y$ is not yet bound, but
+  $x$ is $R$'s first column, so $R$ can provide the set of $x$-values
+  (its row keys).  Similarly $T(x,z)$ provides $x$-values.
+  $S(y,z)$ does not contain~$x$.\\
+  \emph{Participants:} $R$, $T$.  \emph{Action:} intersect row
+  keys of $R$ and $T$.
+
+\item[Depth 1 ($y$).]
+  $R(x,y)$: $x$ is bound (depth~0), so $R$ provides the neighbors
+  of~$x$---the $y$-candidates.
+  $S(y,z)$: $y$ is $S$'s first column, so $S$ provides row keys.
+  $T(x,z)$: does not contain~$y$.\\
+  \emph{Participants:} $R$, $S$.  \emph{Action:} intersect $N_R(x)$
+  with rows of~$S$.
+
+\item[Depth 2 ($z$).]
+  $S(y,z)$: $y$ is bound (depth~1), so $S$ provides neighbors
+  of~$y$---the $z$-candidates.
+  $T(x,z)$: $x$ is bound (depth~0), so $T$ provides neighbors
+  of~$x$---also $z$-candidates.
+  $R(x,y)$: does not contain~$z$.\\
+  \emph{Participants:} $S$, $T$.  \emph{Action:}
+  \textbf{intersect} $N_S(y) \cap N_T(x)$.
+\end{description}
+
+\noindent
+Table~\ref{tab:levels} summarizes the result.
+
+\begin{table}[t]
+\centering
+\caption{Variable-at-a-time evaluation of the triangle query, derived
+by the construction in Section~\ref{sec:construction}.  At
+depth~2, two atoms constrain~$z$, requiring intersection.  This is
+where the fused approach differs from pairwise SpMM.}
+\label{tab:levels}
+\small
+\begin{tabular}{@{}cllll@{}}
+\toprule
+Depth & Var.\ & Atoms & Candidates & Action \\
+\midrule
+0 & $x$ & $R, T$ & rows$(R) \cap \text{rows}(T)$ & intersect \\
+1 & $y$ & $R, S$ & $N_R(x) \cap \text{rows}(S)$ & intersect \\
+2 & $z$ & $S, T$ & $\mathbf{N_S(y) \cap N_T(x)}$ & \textbf{intersect} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Contrast with SpMM.}
+Apply the same construction to the two-relation join $R(x,y) \bowtie
+S(y,z)$ (Section~\ref{sec:spmm}).  At depth~2, only $S$ contains~$z$
+(with $y$ already bound), so there is a single participant---no
+intersection, just iteration over $N_S(y)$.  The difference between
+SpMM and the triangle query is entirely at depth~2: one participant
+(iterate) vs.\ two (intersect).  This is the structural reason that
+the pairwise approach cannot fuse: it evaluates $R \bowtie S$ first,
+producing all $(x,y,z)$ triples with $z \in N_S(y)$, and only then
+checks whether $z \in N_T(x)$.  The fused plan checks both constraints
+simultaneously.
+
+\paragraph{Generality.}
+This construction applies to any conjunctive query, not just triangles.
+Ngo et al.~\cite{nprr2018} proved that the resulting \emph{Generic
+Join} algorithm is worst-case optimal (matching the AGM
+bound~\cite{agm2013}); Veldhuizen's Leapfrog
+Triejoin~\cite{veldhuizen2014} is its practical realization on sorted
+data.  For aggregate queries such as triangle \emph{counting}
+($\sum_{x,y,z} R(x,y) \cdot S(y,z) \cdot T(x,z)$), the FAQ framework
+of Abo Khamis et al.~\cite{abokhamis2016faq} generalizes the
+construction using variable elimination, pushing summation inside the
+nested loops.
+
+\subsection{Why Pairwise Evaluation Fails}
+
+A natural alternative decomposes the triangle query into two binary
+joins: first compute all length-2 paths $J(x,y,z) = R(x,y) \bowtie
+S(y,z)$ via SpMM, then filter~$J$ against~$T(x,z)$.
+
+The problem is the intermediate~$J$.  Consider a star graph: one hub
+vertex connected to $\sqrt{M}$ others.  The SpMM produces
+$\sqrt{M} \times \sqrt{M} = M$ length-2 paths through the hub, most
+of which do not close into triangles.  More generally, pairwise
+evaluation pays for \emph{all} length-2 paths---cost $\Oh(M^2)$ in
+the worst case---before discovering that most lead nowhere.
+
+The fused approach avoids this entirely.  At depth~2, instead of
+freely iterating $N_S(y)$ and then filtering, it \emph{intersects}
+$N_S(y)$ with $N_T(x)$.  Only $z$-values that close the triangle
+survive.  Dead-end paths are never explored.
+
+This is analogous to \emph{loop fusion} in numerical computing:
+the pairwise approach runs two separate passes (multiply, then filter),
+while the fused approach combines them into a single pass that never
+materializes the intermediate.
+
+\subsection{The Intersection Kernel}
+\label{sec:leapfrog}
+
+The intersection at depth~2 operates on two sorted neighbor lists.
+Two cursors alternate, each jumping past the other's current value
+(Algorithm~\ref{alg:leapfrog}).  When the gap between matching values
+is large, galloping (exponential) search skips ahead in $\Oh(\log g)$
+time rather than scanning linearly---adapting to the structure of the
+data.  This is the \emph{leapfrog join} of
+Veldhuizen~\cite{veldhuizen2014}, specialized to two iterators.
+
+\begin{algorithm}[t]
+\caption{\textsc{SortedIntersect}: galloping merge of two sorted arrays
+(leapfrog join~\cite{veldhuizen2014} for two iterators).}
+\label{alg:leapfrog}
+\begin{algorithmic}[1]
+\Require Sorted arrays $A[a_\mathrm{lo}{:}a_\mathrm{hi}]$,
+  $B[b_\mathrm{lo}{:}b_\mathrm{hi}]$; callback~$f$
+\State $i \gets a_\mathrm{lo}$; \; $j \gets b_\mathrm{lo}$
+\While{$i \le a_\mathrm{hi}$ \textbf{and} $j \le b_\mathrm{hi}$}
+  \State $u \gets A[i]$; \; $v \gets B[j]$
+  \If{$u = v$}
+    \State $f(u)$; \; $i \gets i+1$; \; $j \gets j+1$
+  \ElsIf{$u < v$}
+    \State $i \gets \textsc{GallopGeq}(A, v, i, a_\mathrm{hi})$
+  \Else
+    \State $j \gets \textsc{GallopGeq}(B, u, j, b_\mathrm{hi})$
+  \EndIf
+\EndWhile
+\end{algorithmic}
+\end{algorithm}
+
+\noindent
+\textsc{GallopGeq}$(A, v, \mathrm{lo}, \mathrm{hi})$ returns the
+position of the first entry $\ge v$ in $A[\mathrm{lo}{:}\mathrm{hi}]$
+using exponential search followed by binary search, costing
+$\Oh(\log g)$ where $g$ is the number of entries
+skipped~\cite{demaine2000,baezayates2004}.
+
+HPC practitioners will recognize this as the standard galloping merge
+for sorted-set intersection.  The WCOJ framework derives it
+mechanically from the query structure: the programmer specifies the
+triangle pattern; the construction of
+Section~\ref{sec:construction} produces the intersection kernel.
+
+\subsection{Complexity}
+
+The AGM bound~\cite{agm2013} establishes that
+for three binary relations of size~$M$, the triangle query produces at
+most $\Oh(M^{3/2})$ output tuples---and this bound is tight.  The
+bound arises from the fractional edge cover number of the query
+hypergraph, which for the triangle is~$3/2$~\cite{grohe2014,agm2013}.
+The Leapfrog Triejoin~\cite{veldhuizen2014} matches this bound up to a
+logarithmic factor: $\Oh(M^{3/2} \log M)$ on a general sorted
+relation.  On CSR, where row access is $\Oh(1)$ via
+\texttt{rowptr}, the only remaining $\log$ cost is within the
+intersection kernel itself.
+
+\begin{table}[t]
+\centering
+\caption{Pairwise (SpMM) vs.\ fused (WCOJ) triangle counting.}
+\label{tab:pairwise-vs-wcoj}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+ & Pairwise (SpMM) & Fused (WCOJ) \\
+\midrule
+Intermediate & $\Oh(M^2)$ worst case & None \\
+Total cost & $\Oh(M^2)$ & $\Oh(M^{3/2} \log M)$ \\
+Mechanism & Multiply then filter & Simultaneous intersection \\
+Framework & Linear algebra & Relational algebra \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Self-Join and the Standard Algorithm}
+\label{sec:selfjoin}
+
+When all three relations are the same graph~$R$ (stored symmetrically),
+the intersections at depths~0 and~1 become trivial: every vertex has a
+row, and every neighbor has its own adjacency list.  Only the depth-2
+intersection remains non-trivial:
+%
+\begin{align*}
+&\textbf{for each vertex } x\textbf{:}\\
+&\quad \textbf{for each } y \in N(x)\textbf{:}\\
+&\quad\quad \textbf{for each } z \in N(x) \cap N(y)\textbf{:}\\
+&\quad\quad\quad \mathrm{count} \mathrel{+}= 1
+\end{align*}
+
+\noindent
+Read aloud: \emph{for each edge $(x,y)$, count the common neighbors
+of~$x$ and~$y$.}
+
+Without ordering, each triangle $\{a,b,c\}$ is counted six times.
+The constraint $x < y < z$ counts each exactly once: skip $y$-values
+$\le x$, and restrict the intersection to entries past~$y$.  This is
+the standard algorithm known to every HPC graph programmer---derived
+here mechanically from the three-way join specification via the
+construction of Section~\ref{sec:construction}.

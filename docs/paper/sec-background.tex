@@ -1,0 +1,95 @@
+% === Section II: Background and Notation ===
+\section{Background and Notation}
+\label{sec:background}
+
+\subsection{CSR Format}
+
+We store a graph on $N$~vertices and $M$~edges in Compressed Sparse
+Row (CSR) format: an array $\texttt{rowptr}[1{:}N{+}1]$ of row
+pointers and an array $\texttt{colval}[1{:}M]$ of sorted column
+indices.  The neighbors of vertex~$i$ are
+$\texttt{colval}[\texttt{rowptr}[i] {:} \texttt{rowptr}[i{+}1]{-}1]$,
+stored in sorted order.  For an undirected graph, we store both
+directions: if $(u,v)$ is an edge, both $v$ appears in row~$u$ and
+$u$ appears in row~$v$.  We write $N(v)$ for the sorted neighbor list
+of vertex~$v$.
+
+\subsection{Triangle Counting on CSR}
+
+The standard CSR triangle-counting algorithm iterates over each edge
+$(x,y)$ with $y > x$ and intersects the sorted neighbor lists of~$x$
+and~$y$, counting common neighbors greater than~$y$.  This is well
+known in the HPC community~\cite{shun2015,latapy2008}; we formalize it
+as Algorithm~\ref{alg:triangle} in Section~\ref{sec:equivalence}.
+
+\subsection{GraphBLAS Triangle Counting}
+
+GraphBLAS~\cite{kepner2016} expresses graph algorithms as sparse
+linear algebra operations.  It is a \emph{declarative} framework: the
+programmer specifies a computation in terms of matrix operations, and
+the runtime (e.g., SuiteSparse:GraphBLAS~\cite{davis2019}) selects an
+execution strategy.
+
+The standard triangle-counting
+formulation~\cite{aznaveh2020,wolf2017} is:
+\[
+  C \langle L \rangle = L \cdot L, \qquad
+  \text{triangles} = \tfrac{1}{2}\,\textstyle\sum_{ij} C_{ij},
+\]
+where $L$ is the lower-triangular adjacency matrix and $\langle L
+\rangle$ denotes masking: only entries $(i,j)$ where $L_{ij} \ne 0$
+are computed or stored.  The multiplication $L \cdot L$ produces all
+length-2 paths; the mask retains only those that close into triangles.
+
+\paragraph{The intermediate-size problem.}
+Even with masking, the multiply phase may \emph{compute} (though not
+necessarily store) entries that the mask will discard.  Consider a star
+graph: a hub vertex~$h$ with degree~$d$.  The SpMM generates
+$\Theta(d^2)$ length-2 paths through~$h$, of which at most
+$\binom{d}{2}$ could close into triangles (and in a pure star, none
+do).  For a graph with~$M$ edges and a hub of degree $\sqrt{M}$, this
+produces $\Theta(M)$ wasted intermediate entries.  More generally, the
+worst-case cost of pairwise SpMM is $\Oh(M^2)$.
+
+\subsection{Conjunctive Queries and the AGM Bound}
+
+A \emph{conjunctive query} (or natural join) is a conjunction of
+relational atoms sharing variables.  Triangle counting is the query:
+\[
+  Q(x,y,z) \;=\; R(x,y) \;\wedge\; R(y,z) \;\wedge\; R(x,z).
+\]
+The \emph{AGM bound}~\cite{agm2013} establishes the maximum possible
+output size: for three binary relations each of size~$M$, the output
+has at most $\Oh(M^{3/2})$ tuples.  This bound is tight---it is
+achieved by Tur\'{a}n-like graph constructions.
+
+A \emph{worst-case optimal join} (WCOJ) algorithm has running time
+that matches the AGM bound (up to logarithmic
+factors)~\cite{nprr2018}.  The \emph{Leapfrog
+Triejoin}~\cite{veldhuizen2014} is a WCOJ algorithm that operates on
+sorted data, achieving $\Oh(M^{3/2} \log M)$ time for the triangle
+query on a general sorted relation.
+
+\subsection{Variable-at-a-Time Evaluation on CSR}
+\label{sec:csr-joins}
+
+WCOJ algorithms evaluate conjunctive queries \emph{variable at a
+time}: for each variable in a chosen ordering, they iterate over
+candidate values, restricting to those consistent with all relations
+that constrain that variable.  When multiple relations constrain a
+variable, the candidates are the \emph{intersection} of the relevant
+sorted lists.
+
+This evaluation strategy requires two primitives: (1)~sorted iteration
+over a relation's values for a given key, and (2)~\emph{seek}:
+fast-forward to the first value $\ge v$ via galloping search.  These
+are the operations that Veldhuizen~\cite{veldhuizen2014} formalizes as
+the ``trie interface.''
+
+CSR provides both natively.  Row access is $\Oh(1)$ via
+\texttt{rowptr}---no search required---and within each row, the sorted
+\texttt{colval} slice supports iteration and galloping search directly.
+No auxiliary data structures, hash tables, or allocations are needed.
+On a general sorted relation (e.g., COO format), finding a key's
+entries requires $\Oh(\log M)$ binary search; CSR eliminates this cost
+because it \emph{is} the precomputed index.

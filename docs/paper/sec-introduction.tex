@@ -1,0 +1,94 @@
+% === Section I: Introduction ===
+\section{Introduction}
+\label{sec:intro}
+
+Triangle counting---finding all triples of mutually adjacent vertices
+in a graph---is a fundamental kernel in graph analytics, underpinning
+clustering coefficients~\cite{latapy2008}, community
+detection, and network characterization.  It appears as a core
+benchmark in the GAP Benchmark Suite~\cite{beamer2015} and
+Graph500~\cite{graph500}, and is a standard test case for graph
+processing frameworks.
+
+Two \emph{declarative} frameworks compete for expressing this
+computation:
+
+\paragraph{Sparse linear algebra.}
+GraphBLAS~\cite{kepner2016,davis2019} expresses graph algorithms as
+sparse matrix operations.  Triangle counting becomes masked
+sparse matrix--matrix multiplication: $C\langle L \rangle = L \cdot L$,
+where $L$ is the lower-triangular adjacency matrix and the mask retains
+only entries corresponding to actual edges~\cite{aznaveh2020,wolf2017}.
+The programmer states \emph{what} to compute; the runtime determines
+\emph{how}.  But the underlying execution decomposes into pairwise
+matrix operations: the SpMM enumerates all length-2 paths, then the mask
+filters to triangles.  In the worst case, this explores $\Oh(M^2)$
+intermediate entries (where $M$ is the edge count).
+
+\paragraph{Relational algebra.}
+The database community expresses the same computation as a conjunctive
+query: $R(x,y) \wedge R(y,z) \wedge R(x,z)$.  This too is declarative,
+and \emph{worst-case optimal join} (WCOJ)
+algorithms~\cite{nprr2018,veldhuizen2014} evaluate it by processing all
+three relations \emph{simultaneously}---a fused, single-pass evaluation
+that avoids any intermediate materialization.  For the triangle query,
+WCOJ achieves $\Oh(M^{3/2})$ time, matching the AGM
+bound~\cite{agm2013}.
+
+\paragraph{The gap.}
+Meanwhile, the dominant HPC implementation is hand-written: store the
+graph in CSR, and for each edge $(x,y)$ with $y > x$, intersect the
+sorted neighbor lists of~$x$ and~$y$~\cite{shun2015,green2014}.  This
+code is efficient but developed ad~hoc, without connection to either
+declarative framework.
+
+\paragraph{This paper.}
+We show that all three approaches are more tightly connected than
+previously recognized:
+\begin{enumerate}
+\item \textbf{Code equivalence via fusion.}  When the WCOJ algorithm
+  (Leapfrog Triejoin~\cite{veldhuizen2014}) is evaluated over CSR
+  arrays, the generated code is \emph{identical} to hand-written CSR
+  triangle counting---the same galloping-intersection inner loop.
+  The relational framework \emph{fuses} the three-relation join into a
+  single pass; the result is the code that HPC programmers already write
+  by hand.
+
+\item \textbf{SpMM as a special case.}  The two-relation join
+  \emph{is} SpMM.  Triangle counting---the three-relation
+  case---is where the fused approach strictly dominates: instead of a
+  separate multiply and filter, it intersects all three constraints in a
+  single nested loop.
+
+\item \textbf{Measurable advantage on skewed graphs.}  On graphs
+  with high-degree hubs, the pairwise approach produces a large
+  intermediate while the fused approach does not.  We demonstrate this
+  blowup experimentally.
+\end{enumerate}
+
+\noindent
+These results connect to a deeper structural fact.  Wang et
+al.~\cite{wang2020spores} proved that relational algebra rewrite rules
+are \emph{complete} for optimizing linear algebra expressions---any
+equivalent LA expression can be reached via RA rewrites---while the
+converse does not hold.  The fundamental limitation is that linear
+algebra is restricted to pairwise (matrix) operations and cannot reason
+through higher-arity intermediates.  Triangle counting is a concrete
+instance: the optimal fused kernel is a three-way relational join that
+pairwise matrix operations cannot express.
+
+\paragraph{Paper organization.}
+Section~\ref{sec:background} reviews CSR format, GraphBLAS triangle
+counting, the AGM bound, and how CSR supports variable-at-a-time
+evaluation.
+Section~\ref{sec:spmm} shows that the two-relation join recovers SpMM.
+Section~\ref{sec:triangle} develops the three-way triangle join,
+contrasts pairwise vs.\ fused evaluation, and presents the intersection
+kernel.
+Section~\ref{sec:equivalence} presents the central code-equivalence
+result.  Section~\ref{sec:production} describes a production
+realization.  Section~\ref{sec:lazy} explains why lazy evaluation
+of the pairwise approach cannot close the gap, drawing on the
+SPORES completeness result.
+Section~\ref{sec:experiments} gives experimental results.
+Section~\ref{sec:related} discusses related work.

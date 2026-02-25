@@ -1,0 +1,62 @@
+% === Section VIII: Related Work ===
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{GraphBLAS and sparse linear algebra.}
+GraphBLAS~\cite{kepner2016,buluc2011} provides a standard API for
+expressing graph algorithms as sparse matrix operations.
+SuiteSparse:GraphBLAS~\cite{davis2019} is the most widely used
+implementation.  Triangle counting via masked
+SpMM~\cite{aznaveh2020,wolf2017} is the standard GraphBLAS
+formulation.  Our work shows that this corresponds to the pairwise
+join strategy, and that the WCOJ framework subsumes it: the
+two-relation join \emph{is} SpMM, while the three-relation case
+fuses the computation that GraphBLAS decomposes into multiply and
+mask.
+
+\paragraph{Worst-case optimal joins.}
+The AGM bound~\cite{agm2013} on conjunctive query output size
+motivated WCOJ algorithms matching this bound~\cite{nprr2018}.
+Veldhuizen's Leapfrog Triejoin~\cite{veldhuizen2014} operates on
+sorted data and is the basis of our analysis.  The survey by Ngo et
+al.~\cite{ngo2013skew} provides an accessible introduction.
+
+\paragraph{WCOJ for graph processing.}
+EmptyHeaded~\cite{aberger2017} is a graph-processing engine built on
+WCOJ, demonstrating competitive performance with hand-tuned graph
+systems.  Mhedhbi and Salihoglu~\cite{mhedhbi2019} combine binary
+and worst-case optimal joins for subgraph queries.  Our contribution
+is complementary: rather than building a new system, we show that
+WCOJ on CSR generates \emph{exactly} the code that existing
+HPC implementations use.
+
+\paragraph{Relational vs.\ linear algebra optimization.}
+Wang et al.~\cite{wang2020spores} introduced SPORES, which optimizes
+linear algebra expressions by lifting them into relational algebra,
+applying RA rewrite rules, and lowering the result back to LA\@.
+Their key result is that this process is \emph{complete}: any
+equivalent LA expression can be reached via RA rewrites.  The converse
+does not hold---LA rewrite rules alone cannot reach all equivalent LA
+expressions, because they cannot reason through intermediate forms
+with more than two free variables.  Our work provides a concrete
+instance of this gap: the fused triangle-counting kernel is a
+three-way relational join that has no natural decomposition into
+pairwise matrix operations.  We develop this point further in
+Section~\ref{sec:lazy}.
+
+\paragraph{Set intersection.}
+The galloping-merge intersection kernel at the core of both the
+fused join and hand-written CSR triangle counting has been studied
+extensively~\cite{demaine2000,baezayates2004}.  Our work does not
+contribute new intersection algorithms; rather, we show that the
+WCOJ framework derives these algorithms mechanically from a
+declarative query specification.
+
+\paragraph{Triangle counting in HPC.}
+The HPC community has developed highly optimized triangle-counting
+implementations using CSR~\cite{shun2015}, degree
+ordering~\cite{latapy2008}, and GPU
+acceleration~\cite{green2014}.  These are orthogonal to WCOJ:
+degree ordering reduces the work per edge and can be applied within
+the fused-join framework; GPU parallelism applies to the intersection
+kernel regardless of how it was derived.

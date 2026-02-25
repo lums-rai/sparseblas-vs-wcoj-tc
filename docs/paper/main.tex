@@ -1,0 +1,105 @@
+\documentclass[conference]{IEEEtran}
+
+% --- Fonts: Palatino ---
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+
+% --- Math and symbols ---
+\usepackage{amsmath,amssymb}
+
+% --- Algorithms ---
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% --- Tables ---
+\usepackage{booktabs}
+\usepackage{array}
+
+% --- Graphics ---
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+
+% --- Code listings ---
+\usepackage{listings}
+\lstset{
+  basicstyle=\small\ttfamily,
+  columns=fullflexible,
+  keepspaces=true,
+  escapeinside={(*}{*)},
+  xleftmargin=2em,
+  aboveskip=0.5\baselineskip,
+  belowskip=0.5\baselineskip,
+}
+
+% --- Misc ---
+\usepackage{xcolor}
+\usepackage{pifont}
+\usepackage{balance}
+
+% --- Macros ---
+\newcommand{\Oh}{\mathcal{O}}
+\newcommand{\Rel}[1]{\mathit{#1}}
+\newcommand{\op}[1]{\textsc{#1}}
+\newcommand{\trie}{\textsf{trie}}
+\newcommand{\csr}{\textsf{CSR}}
+
+% =====================================================================
+
+\title{Generating Fused Graph Kernels\\Using Relational Algebra}
+
+\author{
+  \IEEEauthorblockN{[Authors]}
+  \IEEEauthorblockA{[Affiliations]}
+}
+
+\begin{document}
+\maketitle
+
+% --- Abstract ---
+\begin{abstract}
+Triangle counting is a fundamental graph kernel with applications from
+community detection to clustering coefficients.  Two declarative
+frameworks dominate: sparse linear algebra (GraphBLAS) expresses it as
+masked sparse matrix--matrix multiplication (SpMM), while relational
+algebra expresses it as a three-way conjunctive join.
+
+We show that these frameworks differ in a fundamental way.  The sparse
+linear algebra approach decomposes the computation into pairwise matrix
+operations (multiply then mask), exploring up to $\Oh(M^2)$ intermediate
+entries.  The relational approach---via worst-case optimal join (WCOJ)
+algorithms---\emph{fuses} all three relations into a single pass,
+achieving $\Oh(M^{3/2})$ time matching the AGM bound.  When evaluated
+over CSR storage, the fused join generates code \emph{identical} to
+hand-written CSR triangle counting---the same galloping-intersection
+inner loop that HPC programmers write by hand.
+
+We demonstrate that SpMM is a special case of the WCOJ framework (the
+two-relation join), that triangle counting is where fusion strictly
+dominates, and that this advantage is not merely theoretical: on RMAT
+graphs with skewed degree distributions, the pairwise approach exhibits
+measurable blowup while the fused approach remains efficient.  Drawing
+on the SPORES result of Wang et al., we show that this gap is
+structural: relational algebra rewrites are \emph{complete} for
+optimizing linear algebra expressions, while the converse does not
+hold---and no amount of lazy evaluation within the pairwise framework
+can recover the fused kernel.
+\end{abstract}
+
+\input{sec-introduction}
+\input{sec-background}
+\input{sec-spmm}
+\input{sec-triangle}
+\input{sec-equivalence}
+\input{sec-production}
+\input{sec-lazy}
+\input{sec-experiments}
+\input{sec-related}
+\input{sec-conclusion}
+
+% --- References ---
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

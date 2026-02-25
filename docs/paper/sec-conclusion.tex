@@ -1,0 +1,33 @@
+% === Section IX: Conclusion ===
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have shown that two declarative frameworks---sparse linear algebra
+and relational algebra---target the same CSR storage and
+the same sorted-intersection primitives, but differ fundamentally in
+what they can express.  Sparse linear algebra decomposes triangle
+counting into pairwise matrix operations (SpMM + mask); relational
+algebra fuses the three-relation join into a single pass.  The fused
+kernel, derived mechanically from the Leapfrog Triejoin, is
+instruction-for-instruction identical to the hand-written CSR triangle
+counting code that HPC programmers have long used.
+
+This equivalence has two implications.  First, the hand-written CSR
+algorithm---previously an ad~hoc construction---is in fact a
+worst-case optimal join, inheriting the $\Oh(M^{3/2})$ AGM bound
+guarantee.  Second, the pairwise SpMM approach is provably suboptimal
+for triangle counting: it cannot avoid the $\Oh(M^2)$ intermediate
+that the fused approach eliminates.  This limitation is structural,
+not an implementation artifact---Wang et al.~\cite{wang2020spores}
+proved that relational algebra rewrites are strictly more powerful
+than linear algebra rewrites, and no amount of lazy evaluation within
+the pairwise linear algebra framework can recover the fused kernel
+(Section~\ref{sec:lazy}).
+
+These results suggest a broader program: worst-case optimal joins
+provide a principled path from declarative graph-pattern queries to
+provably optimal code, with zero abstraction overhead when the
+underlying storage is CSR\@.  Extensions to $k$-clique counting,
+subgraph enumeration, and more complex motif queries are natural---the
+WCOJ framework handles arbitrary cyclic join patterns, a capability
+that pairwise matrix operations fundamentally lack.

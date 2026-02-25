@@ -1,0 +1,58 @@
+% === Section III: Two-Relation Join = SpMM ===
+\section{Two-Relation Join Recovers SpMM}
+\label{sec:spmm}
+
+Before tackling the triangle query, we demonstrate a remarkable
+correspondence: the two-relation join $R(x,y) \bowtie S(y,z)$ is
+precisely sparse matrix--matrix multiplication (SpMM),
+$C = R \times S$.
+
+Evaluating the join variable at a time with ordering $(x,y,z)$:
+
+\smallskip
+\begin{center}
+\small
+\begin{tabular}{@{}clll@{}}
+\toprule
+Level & Var.\ & Constraints & Candidates \\
+\midrule
+1 & $x$ & $R(x,\cdot)$ & rows of $R$: $\{1, \ldots, N\}$ \\
+2 & $y$ & $R(x,y),\; S(y,\cdot)$ & $N_R(x) \cap \text{rows}(S)$ \\
+3 & $z$ & $S(y,z)$ & $N_S(y)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+
+\noindent
+At each level, the variable is constrained by the relations containing
+it.  Crucially, no level has more than one relation contributing
+\emph{values}---level~2's intersection is trivial when $S$ covers all
+row indices $1{:}N$ (since $N_R(x) \cap \{1, \ldots, N\} = N_R(x)$).
+The join reduces to:
+%
+\begin{align*}
+&\textbf{for } x = 1 \textbf{ to } N\textbf{:}\\
+&\quad \textbf{for } y \in N_R(x)\textbf{:}\\
+&\quad\quad \textbf{for } z \in N_S(y)\textbf{:}\\
+&\quad\quad\quad C[x,z] \mathrel{+}= R[x,y] \cdot S[y,z]
+\end{align*}
+%
+This is the textbook \emph{row-by-row SpMM} algorithm.
+No intersections are needed---each level's variable is constrained by
+at most one relation, so the evaluation is pure nested iteration.
+
+\paragraph{Connection to GraphBLAS.}
+The GraphBLAS \texttt{GrB\_mxm} operation computes this two-relation
+join.  GraphBLAS triangle counting~\cite{aznaveh2020,wolf2017}
+extends it to three relations via a mask: $C\langle L \rangle = L
+\cdot L$, which first computes the two-relation SpMM and then filters
+by the third relation.  This is exactly the pairwise strategy
+that Section~\ref{sec:triangle} analyzes.
+
+The key observation: SpMM is the special case where each variable is
+constrained by at most one relation, requiring no intersection.
+Triangle counting---the three-relation case---is where multiple
+relations constrain the same variable, and intersection becomes
+essential.  The fused approach intersects where the pairwise approach
+decomposes.

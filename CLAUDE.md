@@ -2,55 +2,91 @@
 
 ## Project
 
-Comparing worst-case optimal join (WCOJ / trie-join) with sparse BLAS for
-triangle counting. The goal is a pedagogical document showing that the
-trie-join framework, when backed by CSR storage, generates code identical
-to hand-written CSR triangle counting — and benchmarks confirming this.
+HPEC 2026 paper: "Generating Fused Graph Kernels from Relational Algebra."
+Compares worst-case optimal joins (WCOJ) with sparse linear algebra (GraphBLAS)
+for triangle counting. Central thesis: both are declarative frameworks targeting
+CSR, but relational algebra generates a *fused* three-way kernel that pairwise
+matrix operations cannot express.
 
 ## Repository Structure
 
-- `docs/triangle-triejoin-csr.md` — main document (7 sections, iteratively refined)
-- `julia/` — Julia benchmark code (standalone, outside RAICode)
-- `cpp/` — C++ reference implementation
+- `docs/paper/` — HPEC paper (IEEE two-column, Palatino, ~9 pages)
+  - `main.tex` — master file, abstract, \input for all sections
+  - `refs.bib` — bibliography (~22 entries)
+  - `sec-introduction.tex` — Section I: two declarative frameworks framing
+  - `sec-background.tex` — Section II: CSR, GraphBLAS (as declarative), AGM bound, variable-at-a-time on CSR
+  - `sec-spmm.tex` — Section III: two-relation join = SpMM
+  - `sec-triangle.tex` — Section IV: pairwise vs fused, **includes formal WCOJ derivation recipe** (IV-A)
+  - `sec-equivalence.tex` — Section V: code equivalence (central result), side-by-side figure, Algorithms 2-3
+  - `sec-production.tex` — Section VI: TrieState interface, B+ tree vs CSR backends
+  - `sec-lazy.tex` — Section VII: why lazy evaluation can't close the gap (SPORES result)
+  - `sec-experiments.tex` — Section VIII: TBD placeholders for benchmarks
+  - `sec-related.tex` — Section IX: related work
+  - `sec-conclusion.tex` — Section X: conclusion
+- `docs/triangle-triejoin-csr.md` — original pedagogical document (reference, not actively edited)
+- `julia/` — Julia benchmark code (TBD)
+- `cpp/` — C++ reference implementation (TBD)
 
-## Key Context
+## Build
 
-### The document builds up progressively:
-1. Relations as tries (interface, not storage)
-2. Two-relation join = SpMM (remarkable that WCOJ subsumes SpMM)
-3. Three-relation join: pairwise O(M^2) vs WCOJ O(M^{3/2})
-4. Self-join R=S=T with x<y<z
-5. Trie-join <-> CSR side by side, with `intersect_neighbors` abstraction
-6. In RAICode: TrieState interface -> spans -> CSR (shows generated code = hand-written)
-7. Performance results (placeholder tables to be filled)
+```
+cd docs/paper && latexmk -pdf main.tex
+```
 
-### Important terminology:
+## Key Framing Decisions (established through discussion)
+
+1. **Both frameworks are declarative.** GraphBLAS (sparse LA) and relational
+   algebra are both declarative. The paper compares two declarative frameworks,
+   not "declarative DB vs imperative HPC."
+
+2. **Loop fusion metaphor.** WCOJ = fused kernel (single pass, simultaneous
+   intersection). SpMM = unfused (multiply then filter, two passes). HPC
+   audience understands fusion.
+
+3. **Minimal trie formalism.** The trie interface is mentioned in one paragraph
+   (Section II-E) as Veldhuizen's formalization, not built up as a standalone
+   section. CSR already IS the trie — precomputed index, O(1) row access.
+
+4. **SPORES is more than an aside.** Wang et al. proved RA rewrites are
+   complete for LA optimization; LA rewrites are not. This is a dedicated
+   section (VII) addressing the "lazy evaluation will fix it" objection.
+
+5. **Formal WCOJ derivation.** Section IV-A gives the three-step recipe for
+   constructing a WCOJ evaluation plan from a conjunctive query. Cites
+   Veldhuizen (Leapfrog Triejoin), NPRR (Generic Join), FAQ (InsideOut for
+   aggregation), and fractional hypertree width.
+
+6. **Variable-at-a-time, not trie ops.** Use N(x), N_R(x) notation instead of
+   R.level1, R.open(x). Tables show "Constraints" and "Candidates" columns.
+
+## Important Terminology
+
 - **CSI** = Contiguous Span Iterator (NOT Column Store Iterator)
 - **TSM** = TrieStateMaterialized (B+ tree backed)
 - **TSC** = TrieStateContiguous (implicit 1:N keys)
-- Trie is an *interface* over data, not a storage format
-- Relation = edge list = COO sparse matrix
-- Rows are contiguous *within* spans (NOT one span per row)
+- **WCOJ** = Worst-Case Optimal Join
+- **FAQ** = Functional Aggregate Queries (Abo Khamis, Ngo, Rudra 2016)
+- **AGM bound** = Atserias-Grohe-Marx bound: output ≤ O(M^{3/2}) for triangles
+- N(v) = sorted neighbor list of vertex v
 
-### Performance results tables:
-- **Public table:** RAICode trie, RAICode CSR, julia_csr, cpp_csr
-- **Internal table:** incremental improvements: no spans -> +TSM spans -> +TSC spans -> +CSR
+## Key References in the Paper
 
-### Related RAICode code (in the raicode repo):
-- `packages/BerkeleyOperators/src/TrieInterface/trie-state-conjunction.jl`
-- `packages/BerkeleyOperators/src/TrieInterface/trie-state-contiguous.jl`
-- `bench/Microbench/spans/conjunction-span-bench.jl` — existing triangle benchmark
-- `bench/Microbench/spans/spmatvec-bench.jl` — SpMV benchmark (TSC vs TSM)
-- `bench/Microbench/spans/SPEC-trie-state-contiguous.md` — TSC specification
+- Veldhuizen 2014 — Leapfrog Triejoin algorithm
+- NPRR 2018 — Generic Join, WCOJ theory
+- AGM 2013 — output size bounds for conjunctive queries
+- Grohe-Marx 2014 — fractional edge covers / hypertree width
+- Abo Khamis et al. 2016 — FAQ framework
+- Wang et al. 2020 — SPORES (RA complete for LA optimization)
+- Aznaveh et al. 2020, Wolf et al. 2017 — GraphBLAS triangle counting
 
 ## Git
 
 - Remote: `git@github-rai:lums-rai/sparseblas-vs-wcoj-tc.git`
-- Uses `github-rai` SSH alias (same as raicode repo)
+- Uses `github-rai` SSH alias
 
-## Style preferences
+## Style Preferences
 
-- Abstract-first, then concrete: start with trie-join concepts, then show RAICode
 - No emojis in documents
-- Show side-by-side comparisons (trie-join <-> CSR)
-- When showing generated code, annotate each line with the TrieState operation it maps to
+- Show side-by-side comparisons (fused join <-> CSR code)
+- Use N(x) notation, not trie operations
+- "Fused" not "trie-join" when describing the WCOJ approach for HPC audience

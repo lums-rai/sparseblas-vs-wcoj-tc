@@ -1,0 +1,88 @@
+% === Section VI: Realization in a Production System ===
+\section{Realization in a Production System}
+\label{sec:production}
+
+To demonstrate that the fused-join/CSR equivalence is not merely a
+theoretical observation, we show how it is realized in a production
+relational database system that uses the Leapfrog Triejoin as its core
+join algorithm.
+
+\subsection{The TrieState Interface}
+
+The system wraps each relation in a \emph{TrieState}---an object
+implementing the sorted-access primitives from
+Section~\ref{sec:csr-joins}:
+
+\smallskip
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+TrieState operation & Behavior \\
+\midrule
+\texttt{iterate(Val(k))} & next key at level $k$ \\
+\texttt{seek\_lub(v, Val(k))} & first key $\ge v$ at level $k$ \\
+\texttt{open(Val(k))} & descend to level $k{+}1$ \\
+\texttt{close(Val(k))} & restore state at level $k$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+
+For the triangle query, three TrieStates are created over the same
+edge relation---one for each atom $R(x,y)$, $R(y,z)$, $R(x,z)$---and
+handed to a \emph{TrieStateConjunction}.  The conjunction uses the
+variable-to-relation bindings (known at compile time) to generate,
+via metaprogramming, a specialized nested-loop program that calls only
+the abstract TrieState operations.
+
+\subsection{Storage Backends and Overhead}
+
+The TrieState interface decouples the join algorithm from storage.
+Different backends incur different overhead in the intersection inner
+loop:
+
+\begin{table}[t]
+\centering
+\caption{Abstraction layers from query to machine code.  Each layer
+adds functionality; the rightmost column shows what overhead it
+introduces in the intersection kernel.}
+\label{tab:layers}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Layer & Adds & Kernel overhead \\
+\midrule
+Fused join (WCOJ) & Correctness, optimality & --- \\
+TrieState interface & Pluggable backends & Dispatch \\
+B+ tree w/~spans & Page-level access & Page boundaries \\
+CSR arrays & Flat, contiguous & \textbf{Zero} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{B+ tree storage.}
+The default storage uses B+ trees accessed through a contiguous span
+iterator (CSI), which returns data in \emph{spans}---contiguous arrays
+of keys from a single B+ tree page.  Within a span, the generated
+\texttt{seek\_lub} performs a galloping search on a contiguous
+array---the same \textsc{GallopGeq} from
+Algorithm~\ref{alg:intersect}.  The remaining overhead is page
+boundaries: when a neighbor list crosses a span boundary, the iterator
+must advance to the next B+ tree page.
+
+\paragraph{CSR storage.}
+With CSR arrays, each row's neighbor list is a single contiguous
+slice---no page boundaries, no multi-span handling.  The TrieState
+operations become trivial:
+\texttt{iterate(Val(1))} increments the row index;
+\texttt{open(Val(1))} reads \texttt{rowptr} to get the column range;
+\texttt{seek\_lub(v, Val(2))} calls \textsc{GallopGeq} on the
+\texttt{colval} slice.
+
+After the metaprogramming system inlines these operations and
+the compiler performs constant folding, the generated code for the
+triangle query is instruction-for-instruction
+Algorithm~\ref{alg:triangle}---the same code that an HPC programmer
+writes by hand (Section~\ref{sec:equivalence}).  The abstraction
+imposes zero overhead.
