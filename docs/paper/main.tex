@@ -61,35 +61,33 @@
 
 % --- Abstract ---
 \begin{abstract}
-Triangle counting is a fundamental graph kernel with applications from
-community detection to clustering coefficients.  Two declarative
-frameworks dominate: sparse linear algebra (GraphBLAS) expresses it as
-masked sparse matrix--matrix multiplication (SpMM), while relational
-algebra expresses it as a three-way conjunctive join.
-
-We show that these frameworks differ in a fundamental way.  The sparse
-linear algebra approach decomposes the computation into pairwise matrix
-operations (multiply then mask), exploring up to $\Oh(M^2)$ intermediate
-entries.  The relational approach---via worst-case optimal join (WCOJ)
-algorithms---\emph{fuses} all three relations into a single pass,
-achieving $\Oh(M^{3/2})$ time matching the AGM bound.  When evaluated
-over CSR storage, the fused join generates code \emph{identical} to
-hand-written CSR triangle counting---the same galloping-intersection
-inner loop that HPC programmers write by hand.
-
-We demonstrate that SpMM is a special case of the WCOJ framework (the
-two-relation join), that triangle counting is where fusion strictly
-dominates, and that this advantage is not merely theoretical: on RMAT
-graphs with skewed degree distributions, the pairwise approach exhibits
-measurable blowup while the fused approach remains efficient.  Drawing
-on the SPORES result of Wang et al., we show that this gap is
-structural: relational algebra rewrites are \emph{complete} for
-optimizing linear algebra expressions, while the converse does not
-hold---and no amount of lazy evaluation within the pairwise framework
-can recover the fused kernel.  We show that this limitation sharpens
-beyond triangles: for 4-cycles, diamonds, bow-ties, and $k$-cycles,
-no masked SpGEMM formulation exists, and the pairwise gap is
-unavoidable for any cyclic graph pattern.
+Graph algorithms are typically implemented by hand, using operatiions over vertices and
+edges.  Expressing them declaratively at the level of graphs enables
+systematic optimization of entire classes of graph computations.  One
+successful approach exploits the correspondence between graphs and
+sparse matrices: GraphBLAS couches graph operations as sparse linear
+algebra over user-defined semirings.  This paper explores an
+alternative: using the correspondence between graphs and
+\emph{relations} to express graph algorithms, and leveraging
+optimizations from relational algebra---in particular worst-case
+optimal join (WCOJ) algorithms---to generate fused kernels equivalent
+to hand-written code.  We show that relational algebra rewrites are
+strictly more powerful than linear algebra rewrites for graph
+computations with cyclic structure: sparse linear algebra decomposes
+computation into pairwise matrix products, producing intermediates up
+to $\Oh(M^2)$ in size for patterns such as triangles, 4-cycles, and
+cliques, while WCOJ fuses all relations into a single pass, achieving
+$\Oh(M^{3/2})$ time matching the AGM bound.  When evaluated over CSR
+storage, the fused join generates code identical to hand-written CSR
+triangle counting.  Drawing on the SPORES result of Wang et al., we
+show that this gap is structural: relational algebra rewrites are
+complete for optimizing linear algebra expressions, while the converse
+does not hold.  Beyond triangles, for 4-cycles, diamonds, bow-ties,
+and $k$-cycles, no masked SpGEMM formulation exists and the pairwise
+gap is unavoidable for any cyclic graph pattern.  Performance results
+confirm that the
+pairwise approach exhibits measurable blowup on high-degree vertices
+while the fused approach remains efficient.
 \end{abstract}
 
 \input{sec-introduction}
