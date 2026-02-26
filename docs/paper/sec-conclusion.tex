@@ -24,10 +24,18 @@ than linear algebra rewrites, and no amount of lazy evaluation within
 the pairwise linear algebra framework can recover the fused kernel
 (Section~\ref{sec:lazy}).
 
-These results suggest a broader program: worst-case optimal joins
-provide a principled path from declarative graph-pattern queries to
-provably optimal code, with zero abstraction overhead when the
-underlying storage is CSR\@.  Extensions to $k$-clique counting,
-subgraph enumeration, and more complex motif queries are natural---the
-WCOJ framework handles arbitrary cyclic join patterns, a capability
-that pairwise matrix operations fundamentally lack.
+These results extend beyond triangles.  As
+Section~\ref{sec:beyond} demonstrates, the masked SpGEMM technique
+that partially closes the gap for triangles does not generalize: for
+4-cycles, diamonds, bow-ties, and $k$-cycles, no natural mask exists,
+and the pairwise approach is stuck at $\Oh(M^2)$ while WCOJ achieves
+$\Oh(M^{3/2})$ or better.  The dividing line is the cyclicity of the
+query hypergraph---any graph pattern containing a cycle requires
+multiway intersection for optimal evaluation, and pairwise matrix
+operations are structurally limited to binary join plans.
+
+Worst-case optimal joins thus provide a principled path from
+declarative graph-pattern queries to provably optimal code, with zero
+abstraction overhead when the underlying storage is CSR\@.  The WCOJ
+framework handles arbitrary cyclic join patterns, a capability that
+pairwise matrix operations fundamentally lack.

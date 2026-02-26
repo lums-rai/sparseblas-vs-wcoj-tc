@@ -2,7 +2,8 @@
 
 ## Project
 
-HPEC 2026 paper: "Generating Fused Graph Kernels from Relational Algebra."
+Paper: "Generating Fused Graph Kernels from Relational Algebra."
+arXiv preprint first, then format for HPEC 2026 submission.
 Compares worst-case optimal joins (WCOJ) with sparse linear algebra (GraphBLAS)
 for triangle counting. Central thesis: both are declarative frameworks targeting
 CSR, but relational algebra generates a *fused* three-way kernel that pairwise
@@ -10,7 +11,8 @@ matrix operations cannot express.
 
 ## Repository Structure
 
-- `docs/paper/` — HPEC paper (IEEE two-column, Palatino, ~9 pages)
+- `docs/paper/` — arXiv preprint (single-column, 11pt, no page limit)
+- `docs/research/` — research notes and Q&A documents with citations
   - `main.tex` — master file, abstract, \input for all sections
   - `refs.bib` — bibliography (~22 entries)
   - `sec-introduction.tex` — Section I: two declarative frameworks framing

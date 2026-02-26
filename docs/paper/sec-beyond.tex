@@ -1,0 +1,168 @@
+% === Section VIII: Beyond Triangles ===
+\section{Beyond Triangles: Cyclic Patterns in General}
+\label{sec:beyond}
+
+Triangle counting is the simplest cyclic graph query, but the gap
+between pairwise and fused evaluation widens for larger patterns.
+This section applies the WCOJ construction of
+Section~\ref{sec:construction} to additional cyclic queries, showing
+that the masked SpGEMM technique---which partially closes the gap for
+triangles---does not generalize.
+
+\subsection{Why Masked SpGEMM Is Triangle-Specific}
+\label{sec:masked-specific}
+
+Recall the GraphBLAS triangle-counting formulation:
+$C\langle L \rangle = L \cdot L$.  SuiteSparse implements this via
+\emph{dot-product masked SpGEMM}: for each edge $(i,j)$ in the
+mask~$L$, compute the inner product of row~$i$ and column~$j$ of~$L$.
+This effectively intersects $N(i) \cap N(j)$ for each edge---the same
+work that the WCOJ fused kernel performs.
+
+This implementation succeeds because of three properties specific to
+triangles:
+\begin{enumerate}
+\item The mask is the \emph{same} edge set $L$ being multiplied---known
+  in advance, with $M$ entries.
+\item The output is indexed by edges (sparse), not by arbitrary vertex
+  pairs (potentially dense).
+\item A single masked inner product per edge suffices to fuse the
+  three-way check.
+\end{enumerate}
+
+\noindent
+For other cyclic patterns, at least one of these properties fails.
+
+\subsection{4-Cycle (Square) Counting}
+\label{sec:4cycle}
+
+The 4-cycle query asks for all tuples $(a,b,c,d)$ such that edges
+$(a,b)$, $(b,c)$, $(c,d)$, and $(a,d)$ all exist:
+\[
+  Q_4(a,b,c,d) \;=\; R(a,b) \;\wedge\; R(b,c) \;\wedge\; R(c,d)
+    \;\wedge\; R(a,d).
+\]
+
+\paragraph{The linear algebra approach.}
+The standard formulation computes the 2-path matrix $P = A^2$, where
+$P[a,c]$ counts the number of vertices~$b$ such that $(a,b)$ and
+$(b,c)$ are edges.  Each pair of distinct 2-paths between the same
+endpoints forms a 4-cycle, so the count is $\sum_{a < c} \binom{P[a,c]}{2}$.
+
+The problem: \textbf{there is no natural mask.}  The computation requires
+$P[a,c]$ for every pair $(a,c)$ with two or more common neighbors.
+Which pairs are those?  Unknown until $P$ is computed.  And $P$ can be
+\emph{dense}: a star graph with hub degree~$d$ produces $\binom{d}{2}$
+nonzero entries in $P$, even though $A$ has only $d$ edges.  The
+``mask'' would be $\{(a,c) : P[a,c] \ge 2\}$---potentially $\Oh(n^2)$
+entries, exactly the blowup that masking was supposed to prevent.
+
+\paragraph{The WCOJ approach.}
+Applying the construction of Section~\ref{sec:construction} with
+variable ordering $(a, b, d, c)$:
+
+\begin{center}
+\small
+\begin{tabular}{@{}cllll@{}}
+\toprule
+Depth & Var.\ & Atoms & Candidates & Action \\
+\midrule
+0 & $a$ & $R(a,b),\; R(a,d)$ & vertices & iterate \\
+1 & $b$ & $R(a,b)$ & $N(a)$ & iterate \\
+2 & $d$ & $R(a,d)$ & $N(a),\; d \neq b$ & iterate \\
+3 & $c$ & $R(b,c),\; R(c,d)$ & $\mathbf{N(b) \cap N(d)}$ & \textbf{intersect} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At depth~3, WCOJ intersects $N(b) \cap N(d)$---only $c$-values that
+close the 4-cycle survive.  Triples $(a,b,d)$ where $b$ and $d$ share
+no common neighbor are pruned immediately.  The pairwise approach
+computes all of $A^2$ first, then sifts through it.
+
+\paragraph{Complexity.}
+The AGM bound for the 4-cycle with $M$-edge relations is
+$\Oh(M^{3/2})$; the best known WCOJ-style algorithm (PANDA~\cite{abokhamis2016faq})
+achieves $\Oh(M^{3/2})$.  Any pairwise decomposition
+requires $\Oh(M^2)$ in the worst case, because computing the full
+2-path matrix is unavoidable.
+
+\subsection{Other Cyclic Patterns}
+
+The same analysis applies to every cyclic subgraph pattern:
+
+\begin{description}
+\item[Diamond ($K_4$ minus one edge).]
+  Four vertices, five edges.  The query has two cycles.
+  Pairwise: $\Oh(M^2)$.  WCOJ: $\Oh(M^{3/2})$.
+
+\item[Bow-tie (two triangles sharing a vertex).]
+  Five variables, six constraints, two triangular cycles joined at a
+  hub vertex.  The pairwise approach requires computing per-vertex
+  triangle counts and then combining---multiple stages, compounding
+  intermediates.  WCOJ processes all five variables with intersections
+  at the cyclic depths, fusing both triangles into a single pass.
+
+\item[$k$-cycle ($C_k$ for $k \ge 3$).]
+  The AGM bound gives $\Oh(M^{k/2})$; pairwise decomposition is stuck
+  at $\Oh(M^2)$ because any tree decomposition of a $k$-cycle has
+  width $\lceil k/2 \rceil$.  The gap grows with $k$.
+
+\item[$k$-clique ($K_k$).]
+  The AGM bound is $\Oh(M^{k/2})$, which pairwise plans also achieve,
+  so the worst-case gap is in constant factors.  However, the WCOJ
+  approach still avoids intermediate materialization and benefits from
+  intersection pruning on real-world data.
+\end{description}
+
+\subsection{The General Criterion}
+
+The dividing line is the \textbf{cyclicity of the query hypergraph}.
+Grohe and Marx~\cite{grohe2014} established:
+
+\begin{itemize}
+\item \emph{Acyclic queries} (fractional hypertree width $= 1$):
+  Yannakakis's algorithm computes the join in $\Oh(N + |\text{output}|)$
+  time using semijoins.  Binary join plans suffice.  WCOJ provides no
+  asymptotic benefit.
+
+\item \emph{Cyclic queries} (fractional hypertree width $> 1$):
+  Any binary join-project plan is polynomially slower than the AGM
+  bound in the worst case.
+\end{itemize}
+
+\noindent
+Ngo et al.~\cite{ngo2013skew} proved the stronger statement: for
+cyclic queries, ``any join-project plan is destined to be slower than
+the best possible run time by a polynomial factor in the data size.''
+
+In graph terms: acyclic queries are path/tree pattern matching
+(two-way joins suffice).  Every query involving a \emph{cycle}---triangles,
+squares, diamonds, cliques, bow-ties, wheels---requires multiway
+intersection for optimal evaluation.  Since sparse linear algebra
+operates via pairwise matrix products, it is structurally limited to
+binary join plans.  The masked SpGEMM trick recovers optimal
+performance for triangles as a special case, but the general cyclic
+case requires the WCOJ framework.
+
+Table~\ref{tab:cyclic-patterns} summarizes the complexity landscape.
+
+\begin{table}[t]
+\centering
+\caption{Pairwise vs.\ WCOJ complexity for cyclic graph patterns.
+  $M$ = number of edges in each relation.}
+\label{tab:cyclic-patterns}
+\small
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Pattern & Query & Pairwise & WCOJ & Gap \\
+\midrule
+2-path (acyclic) & $R \bowtie S$ & $\Oh(M)$ & $\Oh(M)$ & --- \\
+Triangle ($C_3$) & 3-way & $\Oh(M^2)$ & $\Oh(M^{3/2})$ & $M^{1/2}$ \\
+4-cycle ($C_4$) & 4-way & $\Oh(M^2)$ & $\Oh(M^{3/2})$ & $M^{1/2}$ \\
+Diamond ($K_4 - e$) & 5-way & $\Oh(M^2)$ & $\Oh(M^{3/2})$ & $M^{1/2}$ \\
+$k$-cycle ($C_k$) & $k$-way & $\Oh(M^2)$ & $\Oh(M^{2-\frac{1}{\lceil k/2 \rceil}})$ & polynomial \\
+$k$-clique ($K_k$) & $\binom{k}{2}$-way & $\Oh(M^{k/2})$ & $\Oh(M^{k/2})$ & const. \\
+\bottomrule
+\end{tabular}
+\end{table}

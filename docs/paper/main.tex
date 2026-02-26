@@ -1,4 +1,10 @@
-\documentclass[conference]{IEEEtran}
+% arXiv preprint — no page limits.
+% For HPEC submission: switch to \documentclass[conference]{IEEEtran},
+% restore IEEEtran author blocks, \balance, and IEEEtran bibliography style.
+\documentclass[11pt]{article}
+
+% --- Page geometry (generous for arXiv preprint) ---
+\usepackage[margin=1in]{geometry}
 
 % --- Fonts: Palatino ---
 \usepackage[T1]{fontenc}
@@ -35,7 +41,7 @@
 % --- Misc ---
 \usepackage{xcolor}
 \usepackage{pifont}
-\usepackage{balance}
+\usepackage{hyperref}
 
 % --- Macros ---
 \newcommand{\Oh}{\mathcal{O}}
@@ -46,12 +52,9 @@
 
 % =====================================================================
 
-\title{Generating Fused Graph Kernels\\Using Relational Algebra}
+\title{Generating Fused Graph Kernels Using Relational Algebra}
 
-\author{
-  \IEEEauthorblockN{[Authors]}
-  \IEEEauthorblockA{[Affiliations]}
-}
+\author{Authors \\ Affiliations}
 
 \begin{document}
 \maketitle
@@ -83,7 +86,10 @@ on the SPORES result of Wang et al., we show that this gap is
 structural: relational algebra rewrites are \emph{complete} for
 optimizing linear algebra expressions, while the converse does not
 hold---and no amount of lazy evaluation within the pairwise framework
-can recover the fused kernel.
+can recover the fused kernel.  We show that this limitation sharpens
+beyond triangles: for 4-cycles, diamonds, bow-ties, and $k$-cycles,
+no masked SpGEMM formulation exists, and the pairwise gap is
+unavoidable for any cyclic graph pattern.
 \end{abstract}
 
 \input{sec-introduction}
@@ -93,13 +99,13 @@ can recover the fused kernel.
 \input{sec-equivalence}
 \input{sec-production}
 \input{sec-lazy}
+\input{sec-beyond}
 \input{sec-experiments}
 \input{sec-related}
 \input{sec-conclusion}
 
 % --- References ---
-\balance
-\bibliographystyle{IEEEtran}
+\bibliographystyle{plain}
 \bibliography{refs}
 
 \end{document}
